@@ -7,20 +7,20 @@
 
 :root {
     --primary-blue: #2563eb;
-    --primary-dark: #1e40af;
+    --primary-dark: #1d4ed8;
     --secondary-blue: #3b82f6;
     --accent-blue: #60a5fa;
-    --dark-bg: #0f172a;
-    --darker-bg: #0a0f1c;
-    --card-bg: #1e293b;
-    --text-primary: #f1f5f9;
-    --text-secondary: #cbd5e1;
-    --text-muted: #64748b;
-    --border-color: #334155;
+    --dark-bg: #f5f2eb;        /* Soft warm cream secondary */
+    --darker-bg: #fdfcf9;      /* Delicate primary cream bg */
+    --card-bg: #ffffff;        /* Pure white for cards */
+    --text-primary: #2d2b2a;   /* Rich warm charcoal */
+    --text-secondary: #5e5b58; /* Muted gray text */
+    --text-muted: #918c88;     /* Faded warm gray */
+    --border-color: #e6e1d8;   /* Soft beige borders */
     --success: #10b981;
     --warning: #f59e0b;
     --error: #ef4444;
-    --terminal-bg: #0a0f1c;
+    --terminal-bg: #1e1b1a;    /* Chic dark warm brown terminal */
     --terminal-green: #00ff88;
 }
 
@@ -51,7 +51,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Navigation */
 .navbar {
-    background: rgba(15, 23, 42, 0.95);
+    background: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--border-color);
     position: sticky;
@@ -182,7 +182,7 @@ h1, h2, h3, h4, h5, h6 {
     width: 100%;
     max-width: 400px;
     border: 1px solid var(--border-color);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
 }
 
 .modal-header {
@@ -275,7 +275,7 @@ h1, h2, h3, h4, h5, h6 {
 .hero-title {
     font-size: 3rem;
     margin-bottom: 1rem;
-    background: linear-gradient(135deg, var(--text-primary), var(--accent-blue));
+    background: linear-gradient(135deg, var(--primary-dark), var(--primary-blue));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -297,7 +297,7 @@ h1, h2, h3, h4, h5, h6 {
 .title {
     font-size: 2.5rem;
     margin-bottom: 0.5rem;
-    background: linear-gradient(135deg, var(--text-primary), var(--accent-blue));
+    background: linear-gradient(135deg, var(--primary-dark), var(--primary-blue));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -325,7 +325,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .progress-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 10px 30px rgba(45, 43, 42, 0.05);
 }
 
 .progress-card h3 {
@@ -580,7 +580,7 @@ h1, h2, h3, h4, h5, h6 {
 .feature-card:hover {
     transform: translateY(-5px);
     border-color: var(--primary-blue);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 10px 30px rgba(45, 43, 42, 0.05);
 }
 
 .feature-card i {
@@ -691,7 +691,7 @@ h1, h2, h3, h4, h5, h6 {
     border-left: 4px solid var(--primary-blue);
     padding: 1rem 1.5rem;
     border-radius: 0.5rem;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 10px 30px rgba(45, 43, 42, 0.06);
     z-index: 1000;
     transform: translateX(400px);
     transition: transform 0.3s ease;
@@ -790,5 +790,34 @@ h1, h2, h3, h4, h5, h6 {
     
     .task-impact {
         justify-content: flex-start;
+    }
+}
+
+/* AI Ruination Advisor Styles */
+.ai-input-group {
+    display: flex;
+    gap: 1rem;
+}
+
+.ai-input-group input {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    background: var(--dark-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    color: var(--text-primary);
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.ai-input-group input:focus {
+    outline: none;
+    border-color: var(--primary-blue);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+@media (max-width: 600px) {
+    .ai-input-group {
+        flex-direction: column;
     }
 }

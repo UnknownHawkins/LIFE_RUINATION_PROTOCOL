@@ -1,3 +1,8 @@
+// Production Render API Base URL Config (CORS supported)
+const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? ''
+    : 'https://life-ruination-protocol-backend.onrender.com';
+
 // Application State
 let currentUser = null;
 let currentDay = 1;
@@ -194,6 +199,11 @@ const completedTasks = document.getElementById('completedTasks');
 const totalTasks = document.getElementById('totalTasks');
 const dayImpact = document.getElementById('dayImpact');
 
+// AI Elements
+const lifestyleInput = document.getElementById('lifestyleInput');
+const generatePlanBtn = document.getElementById('generatePlanBtn');
+const aiTasksContainer = document.getElementById('aiTasksContainer');
+
 // Progress bars
 const socialProgress = document.getElementById('socialProgress');
 const financialProgress = document.getElementById('financialProgress');
@@ -215,36 +225,77 @@ let userProgress = {
     health: 0,
     completedTasks: [],
     earnedAchievements: [],
-    currentDay: 1
+    currentDay: 1,
+    customPlan: []
 };
 
 // Initialize the application
-function init() {
-    loadUserData();
+async function init() {
+    await loadUserData();
     setupEventListeners();
     updateUI();
     renderAchievements();
+    renderCustomPlan();
 }
 
-// Load user data from localStorage
-function loadUserData() {
-    const savedUser = localStorage.getItem('ruinationUser');
-    if (savedUser) {
-        currentUser = JSON.parse(savedUser);
-        const savedProgress = localStorage.getItem(`ruinationProgress_${currentUser.username}`);
-        if (savedProgress) {
-            userProgress = JSON.parse(savedProgress);
+// Fetch user progress from server
+async function fetchProgress() {
+    const token = localStorage.getItem('ruinationToken');
+    if (!token) return;
+
+    try {
+        const response = await fetch(API_BASE + '/api/progress', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        if (response.ok) {
+            userProgress = await response.json();
             currentDay = userProgress.currentDay || 1;
+            updateUI();
+            renderAchievements();
+            renderCustomPlan();
+        } else if (response.status === 401 || response.status === 403) {
+            handleLogout();
         }
+    } catch (err) {
+        console.error('Error fetching progress:', err);
+        showNotification('Failed to sync progress with server.');
     }
 }
 
-// Save user data to localStorage
-function saveUserData() {
+// Load user data from localStorage and fetch progress
+async function loadUserData() {
+    const token = localStorage.getItem('ruinationToken');
+    const username = localStorage.getItem('ruinationUsername');
+    if (token && username) {
+        currentUser = { username };
+        await fetchProgress();
+    }
+}
+
+// Save user data to the server
+async function saveUserData() {
     if (currentUser) {
         userProgress.currentDay = currentDay;
-        localStorage.setItem('ruinationUser', JSON.stringify(currentUser));
-        localStorage.setItem(`ruinationProgress_${currentUser.username}`, JSON.stringify(userProgress));
+        const token = localStorage.getItem('ruinationToken');
+        if (!token) return;
+
+        try {
+            const response = await fetch(API_BASE + '/api/progress', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(userProgress)
+            });
+            if (!response.ok) {
+                console.error('Failed to sync progress with server');
+            }
+        } catch (err) {
+            console.error('Error syncing progress:', err);
+        }
     }
 }
 
@@ -259,6 +310,10 @@ function setupEventListeners() {
     logoutBtn.addEventListener('click', handleLogout);
     prevDayBtn.addEventListener('click', () => changeDay(-1));
     nextDayBtn.addEventListener('click', () => changeDay(1));
+    
+    if (generatePlanBtn) {
+        generatePlanBtn.addEventListener('click', handleGenerateAIPlan);
+    }
     
     // Close modal when clicking outside
     authModal.addEventListener('click', (e) => {
@@ -331,64 +386,78 @@ function toggleAuthMode() {
 }
 
 // Handle authentication form submission
-function handleAuthSubmit(e) {
+async function handleAuthSubmit(e) {
     e.preventDefault();
     
     const username = usernameInput.value;
     const password = passwordInput.value;
     const mode = authForm.dataset.mode;
+    const url = mode === 'register' ? '/api/auth/register' : '/api/auth/login';
     
-    if (mode === 'register') {
-        // Check if user already exists
-        const existingUser = localStorage.getItem(`ruinationUser_${username}`);
-        if (existingUser) {
-            showNotification('Username already exists. Please choose another.');
+    try {
+        const response = await fetch(API_BASE + url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, password })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            showNotification(data.error || 'Authentication failed.');
             return;
         }
         
-        // Create new user
-        currentUser = { username, password };
-        userProgress = {
-            social: 0,
-            financial: 0,
-            professional: 0,
-            health: 0,
-            completedTasks: [],
-            earnedAchievements: [],
-            currentDay: 1
-        };
-        showNotification('Account created. Your descent begins now.');
-    } else {
-        // Check if user exists and password is correct
-        const savedUser = localStorage.getItem('ruinationUser');
-        if (!savedUser) {
-            showNotification('User not found. Please register first.');
-            return;
+        // Save auth details
+        localStorage.setItem('ruinationToken', data.token);
+        localStorage.setItem('ruinationUsername', data.username);
+        
+        currentUser = { username: data.username };
+        
+        if (mode === 'register') {
+            userProgress = {
+                social: 0,
+                financial: 0,
+                professional: 0,
+                health: 0,
+                completedTasks: [],
+                earnedAchievements: [],
+                currentDay: 1,
+                customPlan: []
+            };
+            showNotification('Account created. Your descent begins now.');
+        } else {
+            showNotification('Welcome back. Continue your path to ruin.');
         }
         
-        const user = JSON.parse(savedUser);
-        if (user.username !== username || user.password !== password) {
-            showNotification('Invalid username or password.');
-            return;
-        }
-        
-        currentUser = user;
-        const savedProgress = localStorage.getItem(`ruinationProgress_${username}`);
-        if (savedProgress) {
-            userProgress = JSON.parse(savedProgress);
-            currentDay = userProgress.currentDay || 1;
-        }
-        showNotification('Welcome back. Continue your path to ruin.');
+        // Fetch fresh progress
+        await fetchProgress();
+        closeAuthModal();
+        updateUI();
+    } catch (err) {
+        console.error('Auth error:', err);
+        showNotification('Authentication server error.');
     }
-    
-    saveUserData();
-    closeAuthModal();
-    updateUI();
 }
 
 // Handle logout
 function handleLogout() {
     currentUser = null;
+    localStorage.removeItem('ruinationToken');
+    localStorage.removeItem('ruinationUsername');
+    userProgress = {
+        social: 0,
+        financial: 0,
+        professional: 0,
+        health: 0,
+        completedTasks: [],
+        earnedAchievements: [],
+        currentDay: 1,
+        customPlan: []
+    };
+    currentDay = 1;
     updateUI();
     showNotification('You have logged out. Your ruination progress has been saved.');
 }
@@ -459,22 +528,26 @@ function changeDay(delta) {
         currentDay = newDay;
         loadDayData(currentDay);
         updateProgressOverview();
+        saveUserData(); // Sync day change to server
     }
 }
 
 // Toggle task completion
 function toggleTask(taskId, completed) {
-    // Find which day this task belongs to
-    let taskDay = null;
     let task = null;
     
-    for (let day = 1; day <= TOTAL_DAYS; day++) {
-        const dayData = dailyData[day];
-        const foundTask = dayData.tasks.find(t => t.id === taskId);
-        if (foundTask) {
-            taskDay = day;
-            task = foundTask;
-            break;
+    // Check if custom task
+    if (taskId >= 10000) {
+        task = userProgress.customPlan.find(t => t.id === taskId);
+    } else {
+        // Find which day this task belongs to
+        for (let day = 1; day <= TOTAL_DAYS; day++) {
+            const dayData = dailyData[day];
+            const foundTask = dayData.tasks.find(t => t.id === taskId);
+            if (foundTask) {
+                task = foundTask;
+                break;
+            }
         }
     }
     
@@ -511,7 +584,8 @@ function toggleTask(taskId, completed) {
     
     saveUserData();
     updateProgressBars();
-    loadDayData(currentDay); // Refresh to update checkboxes and stats
+    loadDayData(currentDay); // Refresh standard checkboxes
+    renderCustomPlan(); // Refresh custom checkboxes
 }
 
 // Update progress bars
@@ -646,6 +720,96 @@ function showNotification(message) {
             notification.classList.add('hidden');
         }, 300);
     }, 3000);
+}
+
+// Generate Custom AI Plan via Gemini
+async function handleGenerateAIPlan() {
+    const lifestyle = lifestyleInput.value.trim();
+    if (!lifestyle) {
+        showNotification('Please enter your lifestyle first.');
+        return;
+    }
+
+    const token = localStorage.getItem('ruinationToken');
+    if (!token) {
+        showNotification('Please login to use the AI Ruination Advisor.');
+        return;
+    }
+
+    generatePlanBtn.disabled = true;
+    generatePlanBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating Ruin...';
+
+    try {
+        const response = await fetch(API_BASE + '/api/generate-plan', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ lifestyle })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            showNotification(data.error || 'Failed to generate plan.');
+            return;
+        }
+
+        // Save generated plan to userProgress
+        userProgress.customPlan = data;
+        
+        // Remove any previously completed custom tasks from completedTasks (since we generated a new plan)
+        userProgress.completedTasks = userProgress.completedTasks.filter(id => id < 10000);
+        
+        showNotification('Personalized ruination plan generated!');
+        addTerminalMessage(`AI Advisor generated custom plan for lifestyle: "${lifestyle}"`);
+
+        renderCustomPlan();
+        saveUserData();
+    } catch (err) {
+        console.error('Error generating AI plan:', err);
+        showNotification('Failed to generate plan due to server error.');
+    } finally {
+        generatePlanBtn.disabled = false;
+        generatePlanBtn.innerHTML = '<i class="fas fa-brain"></i> Let Gemini Ruin My Life';
+        lifestyleInput.value = '';
+    }
+}
+
+// Render Custom AI Plan checklist
+function renderCustomPlan() {
+    if (!currentUser || !userProgress.customPlan || userProgress.customPlan.length === 0) {
+        aiTasksContainer.classList.add('hidden');
+        return;
+    }
+
+    aiTasksContainer.classList.remove('hidden');
+    aiTasksContainer.innerHTML = '<h3>Your Custom AI Ruination Plan</h3>';
+
+    userProgress.customPlan.forEach(task => {
+        const isCompleted = userProgress.completedTasks.includes(task.id);
+        const taskElement = document.createElement('div');
+        taskElement.className = `task-item ${isCompleted ? 'completed' : ''}`;
+        
+        let impactTags = '';
+        Object.entries(task.impact).forEach(([category, value]) => {
+            impactTags += `<span class="impact-tag ${category}">${category}: +${value}%</span>`;
+        });
+        
+        taskElement.innerHTML = `
+            <input type="checkbox" id="task-${task.id}" ${isCompleted ? 'checked' : ''}>
+            <div class="task-content">
+                <div class="task-text">${task.text}</div>
+                <div class="task-impact">${impactTags}</div>
+            </div>
+        `;
+        
+        const checkbox = taskElement.querySelector('input');
+        checkbox.addEventListener('change', () => toggleTask(task.id, checkbox.checked));
+        
+        aiTasksContainer.appendChild(taskElement);
+    });
 }
 
 // Initialize the application when the page loads

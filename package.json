@@ -1,0 +1,31 @@
+{
+  "name": "life_ruination_protocol",
+  "version": "1.0.0",
+  "description": "A satirical web application that humorously guides users through a \"systematic approach to dismantling their existence\" over 56 carefully awkward days. This project is a dark comedy piece presented as a productivity app.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/UnknownHawkins/LIFE_RUINATION_PROTOCOL.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/UnknownHawkins/LIFE_RUINATION_PROTOCOL/issues"
+  },
+  "homepage": "https://github.com/UnknownHawkins/LIFE_RUINATION_PROTOCOL#readme",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@libsql/client": "^0.17.4",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "sqlite3": "^6.0.1"
+  }
+}
