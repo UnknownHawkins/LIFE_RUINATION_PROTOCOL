@@ -4,6 +4,7 @@ const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const path = require('path');
+const helmet = require('helmet');
 const { initDb, get, run } = require('./db');
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -12,6 +13,39 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 dotenv.config();
 
 const app = express();
+
+// Disable X-Powered-By header (to minimize information exposure)
+app.disable('x-powered-by');
+
+// Apply Helmet middleware to configure secure HTTP headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy)
+app.use(helmet({
+    contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+            "default-src": ["'self'"],
+            "script-src": ["'self'"],
+            "style-src": ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+            "font-src": ["'self'", "https://cdnjs.cloudflare.com"],
+            "connect-src": ["'self'", "https://life-ruination-protocol-backend.onrender.com", "https://life-ruination-protocol.vercel.app"],
+            "img-src": ["'self'", "data:", "blob:"],
+        }
+    },
+    hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: "same-origin" },
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+// Apply custom Permissions-Policy header to restrict access to browser features
+app.use((req, res, next) => {
+    res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+    next();
+});
+
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_ruination_key';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
