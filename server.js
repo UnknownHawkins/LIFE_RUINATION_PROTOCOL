@@ -21,12 +21,26 @@ let genAI = null;
 if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_actual_gemini_api_key') {
     genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 }
+// Middleware Configuration with CORS origin restrictions
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://life-ruination-protocol.vercel.app'
+];
 
-// Middleware
-app.use(cors());
+app.use(cors({
+    origin: function (origin, callback) {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) === -1) {
+            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
+    },
+    credentials: true
+}));
+
 app.use(express.json());
-
-// Serve static frontend files from 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Authentication Middleware
