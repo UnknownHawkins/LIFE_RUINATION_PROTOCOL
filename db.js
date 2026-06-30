@@ -1,5 +1,4 @@
 const { createClient } = require('@libsql/client');
-const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const dotenv = require('dotenv');
 
@@ -17,6 +16,7 @@ if (useTurso) {
         authToken: process.env.TURSO_AUTH_TOKEN
     });
 } else {
+    const sqlite3 = require('sqlite3').verbose();
     const dbPath = path.resolve(__dirname, process.env.DATABASE_FILE || 'database.db');
     console.log('Connecting to local SQLite database at:', dbPath);
     db = new sqlite3.Database(dbPath, (err) => {
