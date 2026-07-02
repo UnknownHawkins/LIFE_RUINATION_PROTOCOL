@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { initDb, get, run } = require('./db');
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -28,13 +29,21 @@ app.use(helmet({
             "font-src": ["'self'", "https://cdnjs.cloudflare.com"],
             "connect-src": ["'self'", "https://life-ruination-protocol-backend.onrender.com", "https://life-ruination-protocol.vercel.app"],
             "img-src": ["'self'", "data:", "blob:"],
+            "frame-ancestors": ["'none'"],
+            "object-src": ["'none'"],
+            "base-uri": ["'self'"],
+            "form-action": ["'self'"]
         }
     },
     hsts: {
-        maxAge: 31536000,
+        maxAge: 31536000, // 1 year
         includeSubDomains: true,
         preload: true
     },
+    frameguard: { action: 'deny' },
+    xContentTypeOptions: true,
+    dnsPrefetchControl: { allow: false },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     crossOriginEmbedderPolicy: false,
     crossOriginOpenerPolicy: { policy: "same-origin" },
     crossOriginResourcePolicy: { policy: "cross-origin" }
@@ -46,6 +55,33 @@ app.use((req, res, next) => {
     next();
 });
 
+// Disable unnecessary HTTP methods like TRACE and TRACK to prevent cross-site tracking and debugging exploits
+app.use((req, res, next) => {
+    if (['TRACE', 'TRACK'].includes(req.method)) {
+        return res.status(405).json({ error: 'Method not allowed' });
+    }
+    next();
+});
+
+// Configure Rate Limiters
+// Global Rate Limiter: General limit for API routes
+const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 100, // Limit each IP to 100 requests per windowMs
+    standardHeaders: 'draft-7', // combined `RateLimit` header
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    message: { error: 'Too many requests from this IP, please try again after 15 minutes.' }
+});
+
+// Strict Rate Limiter: Limit auth/expensive routes to mitigate brute-force
+const strictLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 15, // Limit each IP to 15 requests per windowMs
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Too many authentication or plan generation requests. Please try again after 15 minutes.' }
+});
+
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_ruination_key';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -55,6 +91,7 @@ let genAI = null;
 if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_actual_gemini_api_key') {
     genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 }
+
 // Middleware Configuration with CORS origin restrictions
 const allowedOrigins = [
     'http://localhost:3000',
@@ -75,6 +112,10 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// Apply global rate limiting on all API endpoints
+app.use('/api/', globalLimiter);
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Authentication Middleware
@@ -98,31 +139,34 @@ const authenticateToken = (req, res, next) => {
 // --- AUTHENTICATION ROUTES ---
 
 // Register Endpoint
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', strictLimiter, async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
         return res.status(400).json({ error: 'Username and password are required' });
     }
 
-    if (username.trim().length < 3 || password.trim().length < 6) {
-        return res.status(400).json({ error: 'Username must be at least 3 chars and password at least 6' });
+    // Input sanitization: Strip HTML/XML tags and control characters to prevent injection
+    const cleanUsername = String(username).replace(/<[^>]*>/g, '').replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
+
+    if (cleanUsername.length < 3 || String(password).length < 6) {
+        return res.status(400).json({ error: 'Username must be at least 3 characters and password at least 6' });
     }
 
     try {
         // Check if user already exists
-        const existingUser = await get('SELECT id FROM users WHERE username = ?', [username.trim()]);
+        const existingUser = await get('SELECT id FROM users WHERE username = ?', [cleanUsername]);
         if (existingUser) {
             return res.status(409).json({ error: 'Username is already taken' });
         }
 
-        // Hash password
+        // Hash password securely
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // Insert new user
         const result = await run(
             'INSERT INTO users (username, password) VALUES (?, ?)',
-            [username.trim(), hashedPassword]
+            [cleanUsername, hashedPassword]
         );
         const userId = result.id;
 
@@ -132,13 +176,13 @@ app.post('/api/auth/register', async (req, res) => {
             [userId]
         );
 
-        // Generate JWT
-        const token = jwt.sign({ id: userId, username: username.trim() }, JWT_SECRET, { expiresIn: '7d' });
+        // Generate JWT token (expires in 7 days)
+        const token = jwt.sign({ id: userId, username: cleanUsername }, JWT_SECRET, { expiresIn: '7d' });
 
         res.status(201).json({
             message: 'User registered successfully',
             token,
-            username: username.trim()
+            username: cleanUsername
         });
     } catch (error) {
         console.error('Registration error:', error);
@@ -147,27 +191,30 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // Login Endpoint
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', strictLimiter, async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
         return res.status(400).json({ error: 'Username and password are required' });
     }
 
+    // Input sanitization: Strip HTML/XML tags and control characters
+    const cleanUsername = String(username).replace(/<[^>]*>/g, '').replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
+
     try {
         // Retrieve user from DB
-        const user = await get('SELECT * FROM users WHERE username = ?', [username.trim()]);
+        const user = await get('SELECT * FROM users WHERE username = ?', [cleanUsername]);
         if (!user) {
             return res.status(401).json({ error: 'Invalid username or password' });
         }
 
-        // Compare password
+        // Compare password securely
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) {
             return res.status(401).json({ error: 'Invalid username or password' });
         }
 
-        // Generate JWT
+        // Generate JWT token (expires in 7 days)
         const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
 
         res.json({
@@ -224,6 +271,17 @@ app.post('/api/progress', authenticateToken, async (req, res) => {
         (customPlan !== undefined && !Array.isArray(customPlan))
     ) {
         return res.status(400).json({ error: 'Invalid progress data structure' });
+    }
+
+    // Input validation: ensure metric bounds and day limits are realistic
+    if (
+        social < 0 || social > 100 ||
+        financial < 0 || financial > 100 ||
+        professional < 0 || professional > 100 ||
+        health < 0 || health > 100 ||
+        currentDay < 1 || currentDay > 1000
+    ) {
+        return res.status(400).json({ error: 'Metrics must be between 0 and 100, and currentDay must be positive' });
     }
 
     try {
@@ -288,16 +346,25 @@ function generateMockPlan(lifestyle) {
 }
 
 // Generate Custom AI Plan using Google Gemini API (SECURE)
-app.post('/api/generate-plan', authenticateToken, async (req, res) => {
+app.post('/api/generate-plan', authenticateToken, strictLimiter, async (req, res) => {
     const { lifestyle } = req.body;
 
     if (!lifestyle || typeof lifestyle !== 'string' || lifestyle.trim() === '') {
         return res.status(400).json({ error: 'Lifestyle description is required' });
     }
 
+    // Input sanitization and length capping to prevent prompt injection and flooding
+    const cleanLifestyle = lifestyle.replace(/<[^>]*>/g, '').replace(/[\x00-\x1F\x7F-\x9F]/g, '').trim();
+    if (cleanLifestyle.length === 0) {
+        return res.status(400).json({ error: 'Lifestyle description is empty or invalid' });
+    }
+    if (cleanLifestyle.length > 300) {
+        return res.status(400).json({ error: 'Lifestyle description is too long (max 300 characters)' });
+    }
+
     if (!genAI) {
         console.log('Gemini AI integration is not configured. Falling back to mock plan generator.');
-        const fallbackTasks = generateMockPlan(lifestyle);
+        const fallbackTasks = generateMockPlan(cleanLifestyle);
         return res.json(fallbackTasks);
     }
 
@@ -309,7 +376,7 @@ app.post('/api/generate-plan', authenticateToken, async (req, res) => {
 
         const prompt = `You are a dark-humor satirical productivity coach for the "Life Ruination Protocol". 
 The user is asking for a custom 5-day ruination plan tailored to their specific lifestyle. 
-Their lifestyle: "${lifestyle}"
+Their lifestyle: "${cleanLifestyle}"
 
 Generate exactly 5 cringy, awkward, self-sabotaging (but strictly safe, legal, and satirical/humorous) tasks that will dismantle their specific lifestyle.
 You must output a JSON array of objects representing these tasks.
@@ -361,7 +428,7 @@ Remember, output ONLY a valid JSON array, do not include any other markdown text
         res.json(validatedTasks);
     } catch (error) {
         console.warn('Gemini content generation error. Falling back to mock plan generator:', error.message);
-        const fallbackTasks = generateMockPlan(lifestyle);
+        const fallbackTasks = generateMockPlan(cleanLifestyle);
         res.json(fallbackTasks);
     }
 });
@@ -374,9 +441,23 @@ app.use((req, res, next) => {
     next();
 });
 
+// Global catch-all error handling middleware (prevents trace and database leaks to the client)
+app.use((err, req, res, next) => {
+    console.error('Unhandled Server Error:', err.message || err);
+    res.status(500).json({ error: 'An unexpected error occurred. Please try again later.' });
+});
+
 // Initialize database and start Express server
 const startServer = async () => {
     try {
+        // Validate required environment variables at startup
+        if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'fallback_secret_ruination_key') {
+            console.warn('SECURITY WARNING: JWT_SECRET environment variable is either not configured or using default fallback.');
+        }
+        if (!process.env.GEMINI_API_KEY) {
+            console.warn('WARNING: GEMINI_API_KEY is not configured. Generative AI plan custom features will default to mock fallback.');
+        }
+
         await initDb();
         app.listen(PORT, () => {
             console.log(`=========================================`);
